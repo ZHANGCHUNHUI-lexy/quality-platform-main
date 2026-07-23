@@ -5,6 +5,15 @@ name: release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '发布版本标签（必须与应用版本一致）'
+        required: true
+        default: 'v1.42.3'
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 concurrency:
   group: release-${{ github.ref }}
@@ -21,7 +30,7 @@ jobs:
           fetch-depth: 0
       - name: Verify tag and application versions
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
@@ -94,7 +103,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build:portable
-      - run: mv dist-portable/index.html quality-platform-portable-${{ github.ref_name }}.html
+      - run: mv dist-portable/index.html quality-platform-portable-${{ env.RELEASE_TAG }}.html
       - uses: actions/upload-artifact@v4
         with:
           name: browser-portable
@@ -112,14 +121,14 @@ jobs:
           path: release-assets
       - name: Verify assets and publish release
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.RELEASE_TAG }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mapfile -d '' assets < <(find release-assets -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.html' \) -print0)
           test "${#assets[@]}" -ge 5 || { echo 'missing release assets' >&2; exit 1; }
           gh release create "$TAG" "${assets[@]}" \
-            --verify-tag \
+            --target "$GITHUB_SHA" \
             --title "质量分析平台 $TAG" \
             --notes "安装包见 Assets。Windows：.msi 或 .exe；macOS：按芯片选择 .dmg；浏览器版：HTML 文件。" \
             --latest
