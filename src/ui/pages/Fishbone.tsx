@@ -1,0 +1,180 @@
+/**
+ * 鱼骨图（因果图）— 交接文档模块清单「帕累托图 / 鱼骨图」的后半部分。
+ * 6M 分类（人/机/料/法/环/测）,问题与原因可编辑,localStorage 持久化。
+ */
+import { memo, useState, Fragment } from 'react';
+import type { CSSProperties } from 'react';
+import { useApp } from '../../store/appStore';
+import {
+  FISHBONE_DEFAULT,
+  loadFishboneState,
+  saveFishboneState,
+  type FishboneData,
+} from '../../store/fishboneStore';
+import type { ChartTokens } from '../tokens';
+import { Card, DemoBadge, tabStyle } from '../common';
+import { Svg, Ln, Txt } from '../charts/primitives';
+
+export { FISHBONE_DEFAULT, loadFishbone } from '../../store/fishboneStore';
+export type { FishboneData } from '../../store/fishboneStore';
+
+// ---------- SVG 鱼骨 ----------
+const MAX_SHOWN = 4; // 每根骨最多展示的原因数
+
+function FishboneChartImpl({ T, data }: { T: ChartTokens; data: FishboneData }) {
+  const W = 960;
+  const H = 430;
+  const spineY = H / 2;
+  const spineX0 = 40;
+  const spineX1 = 770;
+  const headW = 150;
+  const branchLen = 150; // 垂直投影长度
+  const branchDx = 78; // 斜骨水平偏移
+  const roots = [170, 400, 630]; // 三对骨的根部 x
+
+  const branch = (rootX: number, up: boolean, cat: FishboneData['categories'][number]) => {
+    const tipY = up ? spineY - branchLen : spineY + branchLen;
+    const tipX = rootX + branchDx;
+    const causes = cat.causes.slice(0, MAX_SHOWN);
+    return (
+      <Fragment key={cat.name}>
+        <Ln x1={rootX} y1={spineY} x2={tipX} y2={tipY} stroke={T.axis} sw={1.6} />
+        <rect x={tipX - 46} y={up ? tipY - 22 : tipY + 2} width={92} height={20} rx={4} fill={T.bg} stroke={T.point} strokeWidth={1.4} />
+        <Txt x={tipX} y={up ? tipY - 12 : tipY + 12} s={cat.name} fill={T.point} size={11} anchor="middle" weight={700} />
+        {causes.map((cause, i) => {
+          const f = 0.28 + (i * 0.62) / Math.max(1, MAX_SHOWN - 1); // 沿骨位置
+          const cx = rootX + branchDx * f;
+          const cy = spineY + (tipY - spineY) * f;
+          const label = cause.length > 14 ? cause.slice(0, 13) + '…' : cause;
+          return (
+            <Fragment key={i}>
+              <Ln x1={cx} y1={cy} x2={cx - 52} y2={cy} stroke={T.grid === 'transparent' ? T.axis : T.line} sw={1.1} />
+              <Txt x={cx - 56} y={cy} s={label} fill={T.text} size={10.5} anchor="end" />
+            </Fragment>
+          );
+        })}
+      </Fragment>
+    );
+  };
+
+  return (
+    <Svg w={W} h={H}>
+      <rect x={0} y={0} width={W} height={H} fill={T.bg} />
+      {/* 脊骨与头部问题框 */}
+      <Ln x1={spineX0} y1={spineY} x2={spineX1} y2={spineY} stroke={T.text} sw={2.4} />
+      <polygon points={`${spineX1},${spineY - 8} ${spineX1 + 14},${spineY} ${spineX1},${spineY + 8}`} fill={T.text} />
+      <rect x={spineX1 + 16} y={spineY - 30} width={headW} height={60} rx={6} fill={T.bg} stroke={T.limit} strokeWidth={2} />
+      <Txt x={spineX1 + 16 + headW / 2} y={spineY - 8} s="问题" fill={T.axis} size={10} anchor="middle" />
+      <Txt
+        x={spineX1 + 16 + headW / 2} y={spineY + 8}
+        s={data.problem.length > 10 ? data.problem.slice(0, 9) + '…' : data.problem}
+        fill={T.limit} size={13} anchor="middle" weight={700}
+      />
+      {/* 三上三下六根骨 */}
+      {roots.map((x, i) => branch(x, true, data.categories[i]))}
+      {roots.map((x, i) => branch(x, false, data.categories[i + 3]))}
+    </Svg>
+  );
+}
+
+export const FishboneChart = memo(FishboneChartImpl);
+
+// ---------- 编辑面板 + 页面 ----------
+const inputStyle: CSSProperties = {
+  width: '100%', padding: '6px 9px', border: '1px solid #cfd5dd', borderRadius: 4,
+  fontSize: 12.5, color: '#2a333f', boxSizing: 'border-box',
+};
+
+export function Fishbone({ T }: { T: ChartTokens }) {
+  const showToast = useApp((s) => s.showToast);
+  const [state, setState] = useState(loadFishboneState);
+  const { data, isDemo } = state;
+  const [catIdx, setCatIdx] = useState(0);
+  const [draft, setDraft] = useState('');
+
+  const update = (next: FishboneData, nextIsDemo = false) => {
+    setState({ data: next, isDemo: nextIsDemo });
+    try {
+      saveFishboneState(next, nextIsDemo);
+    } catch {
+      showToast('鱼骨图未能保存到本机，请检查本地存储空间');
+    }
+  };
+  const addCause = () => {
+    const cause = draft.trim();
+    if (!cause) return;
+    const categories = data.categories.map((c, i) => (i === catIdx ? { ...c, causes: [...c.causes, cause] } : c));
+    update({ ...data, categories });
+    setDraft('');
+  };
+  const removeCause = (ci: number) => {
+    const categories = data.categories.map((c, i) => (i === catIdx ? { ...c, causes: c.causes.filter((_, j) => j !== ci) } : c));
+    update({ ...data, categories });
+  };
+  const cat = data.categories[catIdx];
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
+      <Card>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '11px 16px', borderBottom: '1px solid #edf0f3' }}>
+          <div style={{ fontWeight: 600, color: '#33404f' }}>因果图（鱼骨图）· 6M 分析</div>
+          {isDemo && <div style={{ marginLeft: 10 }}><DemoBadge /></div>}
+          <div style={{ marginLeft: 'auto', fontSize: 11, color: '#a3abb5' }}>每根骨展示前 {MAX_SHOWN} 条原因</div>
+        </div>
+        {isDemo && (
+          <div style={{ margin: '10px 14px 0', padding: '8px 10px', borderRadius: 4, background: '#fff8e8', color: '#9a6616', fontSize: 11.5 }}>
+            当前为内置“尺寸超差”示例，非用户根因分析；编辑问题或任一原因后才记为用户数据。
+          </div>
+        )}
+        <div style={{ padding: '10px 14px 6px' }}>
+          <FishboneChart T={T} data={data} />
+        </div>
+      </Card>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Card style={{ padding: '14px 16px' }}>
+          <div style={{ fontWeight: 600, color: '#33404f', marginBottom: 10 }}>问题（鱼头）</div>
+          <input
+            value={data.problem}
+            onChange={(e) => update({ ...data, problem: e.target.value })}
+            style={inputStyle}
+            placeholder="待分析的质量问题"
+          />
+        </Card>
+        <Card style={{ padding: '14px 16px' }}>
+          <div style={{ fontWeight: 600, color: '#33404f', marginBottom: 10 }}>原因编辑</div>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
+            {data.categories.map((c, i) => (
+              <button type="button" key={c.name} aria-pressed={i === catIdx} style={{ ...tabStyle(i === catIdx), padding: '4px 10px', fontSize: 11.5 }} onClick={() => setCatIdx(i)}>
+                {c.name.split(' ')[0]}
+              </button>
+            ))}
+          </div>
+          {cat.causes.length === 0 && <div style={{ fontSize: 12, color: '#9aa2ad', padding: '4px 0' }}>暂无原因,在下方添加</div>}
+          {cat.causes.map((cause, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid #f2f4f6', fontSize: 12.5 }}>
+              <span style={{ flex: 1, color: '#3a4350' }}>{cause}</span>
+              <button type="button" aria-label={`删除原因：${cause}`} onClick={() => removeCause(i)} style={{ cursor: 'pointer', color: '#c22f2f', fontWeight: 700, padding: '0 4px', border: 0, background: 'transparent', fontFamily: 'inherit' }}>×</button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addCause()}
+              style={{ ...inputStyle, flex: 1 }}
+              placeholder={`添加「${cat.name.split(' ')[0]}」类原因…`}
+            />
+            <button type="button" onClick={addCause} style={{ padding: '6px 14px', border: 0, background: '#1f6fb2', color: '#fff', borderRadius: 4, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>添加</button>
+          </div>
+          <button type="button"
+            onClick={() => { update(FISHBONE_DEFAULT, true); setCatIdx(0); showToast('鱼骨图已重置为演示内容'); }}
+            style={{ marginTop: 10, padding: 0, border: 0, background: 'transparent', fontFamily: 'inherit', fontSize: 11.5, color: '#8a929d', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            重置为演示内容
+          </button>
+        </Card>
+      </div>
+    </div>
+  );
+}
