@@ -378,7 +378,7 @@ function prefsValidationError(raw: unknown): string | null {
     'spcSigmaMethod', 'spcShowZones',
     'doeView', 'doeTab', 'doeFactorCols', 'doeRespCol', 'doeModelTerms', 'doeIncludeCurvature',
     't1ColName', 't1Mu0', 't2ColAName', 't2ColBName', 'regXName', 'regYName',
-    'paretoView', 'paretoMergeOther', 'paretoThreshold',
+    'paretoView', 'paretoMergeOther', 'paretoThreshold', 'paretoChartTitle',
   ]);
   const extraStateKey = Object.keys(state).find((key) => !allowedStateKeys.has(key));
   if (extraStateKey) return `偏好设置含有非白名单字段 ${extraStateKey}`;
@@ -420,6 +420,8 @@ function prefsValidationError(raw: unknown): string | null {
     || !Number.isFinite(state.paretoThreshold) || state.paretoThreshold < 0.5 || state.paretoThreshold > 1)) {
     return '帕累托合并阈值无效';
   }
+  if (state.paretoChartTitle !== undefined && (typeof state.paretoChartTitle !== 'string'
+    || state.paretoChartTitle.length > 120)) return '帕累托图标题无效';
   for (const key of ['doeFactorCols', 'doeModelTerms'] as const) {
     if (state[key] !== undefined && state[key] !== null && !isStringArray(state[key])) {
       return `偏好设置 ${key} 不是字符串数组`;

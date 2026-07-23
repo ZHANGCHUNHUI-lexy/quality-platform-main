@@ -197,10 +197,10 @@ describe('偏好持久化安全', () => {
   it('合法偏好仍能恢复', async () => {
     localStorage.setItem('qp-prefs-v1', JSON.stringify({
       version: 3,
-      state: { chartStyle: '高对比', showGrid: false, capabilityBins: 20, paretoThreshold: 0.8 },
+      state: { chartStyle: '高对比', showGrid: false, capabilityBins: 20, paretoThreshold: 0.8, paretoChartTitle: '关键缺陷帕累托图' },
     }));
     await useApp.persist.rehydrate();
-    expect(useApp.getState()).toMatchObject({ chartStyle: '高对比', showGrid: false, capabilityBins: 20, paretoThreshold: 0.8 });
+    expect(useApp.getState()).toMatchObject({ chartStyle: '高对比', showGrid: false, capabilityBins: 20, paretoThreshold: 0.8, paretoChartTitle: '关键缺陷帕累托图' });
   });
 
   it('同版本载荷不能注入未持久化的导航、弹窗、计算器或错误枚举', async () => {
