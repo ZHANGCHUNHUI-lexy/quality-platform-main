@@ -1,9 +1,10 @@
 # Web 在线版 — 部署 dist 到 GitHub Pages。
-# 注意：私有仓库需 GitHub Pro/Team 才能启用 Pages；免费账户需将仓库设为 Public 后
-# 在 Settings → Pages 选 "GitHub Actions"，再手动触发本 workflow。
+# 注意：首次需在 Settings → Pages 选 "GitHub Actions"；此后每次推送主分支自动部署。
 name: pages
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
