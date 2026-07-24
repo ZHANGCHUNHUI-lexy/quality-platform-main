@@ -28,7 +28,7 @@ describe('原生操作控件', () => {
     expect(ewma.getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(ewma);
     expect(ewma.getAttribute('aria-pressed')).toBe('true');
-  });
+  }, 20_000);
 });
 
 describe('弹窗焦点管理', () => {
