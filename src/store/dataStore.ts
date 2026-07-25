@@ -379,6 +379,20 @@ export function resolveActiveMeasurementData(model: VarModel, textCols: TextColu
 }
 
 /**
+ * Minitab 正态能力分析对有子组的数据使用合并组内标准差 Sp/c4(df+1)，
+ * 不是控制图 X̄-R 的 R̄/d₂。能力页、摘要和导出必须共用此口径。
+ */
+function withCapabilitySigma(prepared: SpcPreparedData): SpcPreparedData {
+  const capabilityModel = prepared.model;
+  if (!capabilityModel?.hasSubgroups || !Number.isFinite(capabilityModel.sigmaPooled)) return prepared;
+  return {
+    ...prepared,
+    model: { ...capabilityModel, sigmaWithin: capabilityModel.sigmaPooled },
+    note: `${prepared.note}；Cpk 组内标准差使用合并标准差 Sp/c4(df+1)，与 Minitab 正态能力分析一致`,
+  };
+}
+
+/**
  * 能力分析的数据口径(批次716-N):默认沿用 SPC 角色;可在能力页改为
  * 「单列+子组大小常量」(按行序顺序分组,末尾不足一组的观测不参与并明示)或「单列+子组 ID 列」。
  * 能力页、保存记录与专项报告共用本解析,保证同一数据只有一个能力口径。
@@ -392,12 +406,12 @@ export function resolveCapabilityMeasurementData(model: VarModel, textCols: Text
     const idRef = rawId && !/^(numeric|text):/.test(rawId)
       ? (textCols.some((t) => t.name === rawId) ? `text:${rawId}` : model.colNames.includes(rawId) ? `numeric:${rawId}` : rawId)
       : rawId;
-    return prepareSpcData(model, textCols, {
+    return withCapabilitySigma(prepareSpcData(model, textCols, {
       layout: 'stacked',
       valueColumn: app.capValueCol ?? app.spcValueCol,
       subgroupColumn: idRef,
       pendingCells,
-    });
+    }));
   }
   if (app.capSubgroupMode === 'const') {
     const valueCol = app.capValueCol ?? app.spcValueCol;
@@ -424,13 +438,13 @@ export function resolveCapabilityMeasurementData(model: VarModel, textCols: Text
     const rows = Array.from({ length: full }, (_, i) => values.slice(i * z, (i + 1) * z));
     const temp = computeVarModel(model.name, Array.from({ length: z }, (_, j) => `${valueCol}_${j + 1}`), rows);
     const prepared = prepareSpcData(temp, [], { layout: 'rows', valueColumn: null, subgroupColumn: null, pendingCells: [] });
-    return {
+    return withCapabilitySigma({
       ...prepared,
       variableName: valueCol ?? prepared.variableName,
       note: `能力子组:单列「${valueCol}」按行序每 ${z} 个一组,共 ${full} 个子组${dropped > 0 ? `;末尾 ${dropped} 个观测不足一个子组,未参与本次估计` : ''}`,
-    };
+    });
   }
-  return resolveActiveMeasurementData(model, textCols);
+  return withCapabilitySigma(resolveActiveMeasurementData(model, textCols));
 }
 
 const LS_SPECS = 'qp-specs-v1';

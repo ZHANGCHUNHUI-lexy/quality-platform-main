@@ -319,7 +319,7 @@ export function Capability({ T }: { T: ChartTokens }) {
               rows={[
                 { k: '样本均值 X̄', v: nf(cap.mean, 4) },
                 { k: '样本量 N', v: String(cap.n) },
-                { k: M.hasSubgroups ? 'σ 组内 (R̄/d₂)' : 'σ 组内 (MR̄/d₂)', v: nf(cap.sigmaWithin, 4) },
+                { k: M.hasSubgroups ? 'σ 组内 (Sp/c4)' : 'σ 组内 (MR̄/d₂)', v: nf(cap.sigmaWithin, 4) },
                 { k: 'σ 整体', v: nf(cap.sigmaOverall, 4) },
                 { k: '规格 LSL / 目标 / USL', v: (lslOn ? nf(lsl, 2) : '—') + ' / ' + nf(tgt, 2) + ' / ' + (uslOn ? nf(usl, 2) : '—') },
               ]}

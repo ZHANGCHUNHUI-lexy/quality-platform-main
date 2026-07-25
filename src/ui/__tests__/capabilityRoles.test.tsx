@@ -5,7 +5,7 @@ import { createElement } from 'react';
 import { computeCapability, nf, prepareSpcData } from '../../core';
 import { useAnalyses } from '../../store/analyses';
 import { useApp } from '../../store/appStore';
-import { rememberSpecFor, rememberSpecForActiveMeasurement, suggestedSpec, syncSpecForActiveMeasurement, useData } from '../../store/dataStore';
+import { rememberSpecFor, rememberSpecForActiveMeasurement, resolveCapabilityMeasurementData, suggestedSpec, syncSpecForActiveMeasurement, useData } from '../../store/dataStore';
 import { Capability } from '../pages/Capability';
 import { Dashboard } from '../pages/Dashboard';
 import { buildActiveAnalysisExport, buildActiveAnalysisReport } from '../../platform/activeAnalysisReport';
@@ -37,12 +37,23 @@ beforeEach(() => {
 });
 
 describe('能力分析与 SPC 数据角色一致', () => {
+  it('铆接厚度 30 条数据按子组大小 6 与 Minitab Cpk=4.40 对齐', () => {
+    const values = [1.73, 1.76, 1.79, 1.76, 1.75, 1.76, 1.76, 1.75, 1.73, 1.71, 1.74, 1.76, 1.77, 1.74, 1.75, 1.73, 1.73, 1.77, 1.77, 1.75, 1.73, 1.76, 1.75, 1.74, 1.75, 1.76, 1.74, 1.78, 1.72, 1.77];
+    useData.getState().importMatrix('CPK的数据7.23.xlsx', ['铆接厚度'], values.map((value) => [value]));
+    useApp.setState({ capSubgroupMode: 'const', capSubgroupSize: 6, capValueCol: '铆接厚度' });
+
+    const prepared = resolveCapabilityMeasurementData(useData.getState().model, useData.getState().textCols);
+    if (!prepared.model) throw new Error(prepared.error);
+    const cap = computeCapability(prepared.model.all, prepared.model.sigmaWithin, { lsl: 1.5, tgt: 1.75, usl: 2.0 });
+
+    expect(prepared.model.sigmaWithin).toBeCloseTo(0.0189322167, 9);
+    expect(nf(cap.cpk, 2)).toBe('4.40');
+  });
+
   it('人工反馈表在能力页按 n=5 / N=15 分析，自动规格也排除数值子组 ID', () => {
     importFeedbackTable();
     const data = useData.getState();
-    const prepared = prepareSpcData(data.model, data.textCols, {
-      layout: 'auto', valueColumn: null, subgroupColumn: null,
-    });
+    const prepared = resolveCapabilityMeasurementData(data.model, data.textCols);
     if (!prepared.model) throw new Error(prepared.error);
 
     expect(prepared.model.n).toBe(5);
@@ -147,9 +158,7 @@ describe('能力分析与 SPC 数据角色一致', () => {
   it('保存的能力摘要与页面共用准备后模型，并快照恢复数据角色', () => {
     importFeedbackTable();
     const data = useData.getState();
-    const prepared = prepareSpcData(data.model, data.textCols, {
-      layout: 'auto', valueColumn: null, subgroupColumn: null,
-    });
+    const prepared = resolveCapabilityMeasurementData(data.model, data.textCols);
     if (!prepared.model) throw new Error(prepared.error);
     const app = useApp.getState();
     const expected = computeCapability(prepared.model.all, prepared.model.sigmaWithin, {
@@ -233,9 +242,7 @@ describe('能力分析与 SPC 数据角色一致', () => {
     importFeedbackTable();
     useApp.setState({ lsl: 12, tgt: 15, usl: 30, lslOn: false, uslOn: true, page: 'capability' });
     const data = useData.getState();
-    const prepared = prepareSpcData(data.model, data.textCols, {
-      layout: 'auto', valueColumn: null, subgroupColumn: null, pendingCells: data.pendingCells,
-    });
+    const prepared = resolveCapabilityMeasurementData(data.model, data.textCols);
     if (!prepared.model) throw new Error(prepared.error);
     const expected = computeCapability(prepared.model.all, prepared.model.sigmaWithin, { lsl: null, tgt: 15, usl: 30 });
     const expectedText = nf(expected.cpk, 2);

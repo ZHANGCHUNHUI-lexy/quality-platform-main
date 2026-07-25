@@ -1343,12 +1343,14 @@ export function buildActiveAnalysisExport(): { report?: AnalysisReportPayload; m
   const data = useData.getState();
   let model = data.model;
   if ((app.page === 'spc' && app.spcType !== 'p' && app.spcType !== 'c') || app.page === 'capability') {
-    const prepared = prepareSpcData(data.model, data.textCols, {
-      layout: app.spcDataLayout,
-      valueColumn: app.spcValueCol,
-      subgroupColumn: app.spcSubgroupCol,
-      pendingCells: data.pendingCells,
-    });
+    const prepared = app.page === 'capability'
+      ? resolveCapabilityMeasurementData(data.model, data.textCols)
+      : prepareSpcData(data.model, data.textCols, {
+          layout: app.spcDataLayout,
+          valueColumn: app.spcValueCol,
+          subgroupColumn: app.spcSubgroupCol,
+          pendingCells: data.pendingCells,
+        });
     // SPC 页的通用导出与页面同口径（σ 估计方法随页面设置；能力路径 sigmaWithin 语义不受影响）
     if (prepared.model && !prepared.error) model = withSigmaMethod(prepared.model, app.spcSigmaMethod);
   } else if (app.page === 'spc' && app.spcType === 'p') {
