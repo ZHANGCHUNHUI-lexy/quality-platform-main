@@ -8,7 +8,7 @@ import { useData } from '../../store/dataStore';
 import { chartTokens } from '../tokens';
 import { MiniHist } from '../charts/misc';
 import { NormalProbPlot, residualAxisScale } from '../charts/NormalProbPlot';
-import { ScatterPlot } from '../charts/ScatterPlot';
+import { ScatterPlot, layoutScatterPointLabels } from '../charts/ScatterPlot';
 import { alignUnrandomizedDoeOrders } from '../pages/Doe';
 
 const T = chartTokens('经典', true);
@@ -32,14 +32,14 @@ afterEach(() => {
 });
 
 describe('DOE 残差四联图共享横轴', () => {
-  it('正态概率图与直方图使用相同 domain 和刻度', () => {
+  it('正态概率图与直方图使用相同 domain；直方图横轴显示实际分组边界', () => {
     const data = [-12.2, -8, -3.1, 0, 2.2, 7.7, 11.9, Number.POSITIVE_INFINITY];
     const scale = residualAxisScale(data);
     const normal = renderToStaticMarkup(<NormalProbPlot T={T} data={data} h={220} xLabel="标准化残差" xDomain={scale.domain} xTicks={scale.ticks} />);
     const hist = renderToStaticMarkup(<MiniHist T={T} data={data} h={220} title="标准化残差分布" xLabel="标准化残差" xDomain={scale.domain} xTicks={scale.ticks} />);
 
-    expect(axisLabels(normal, 196)).toEqual(axisLabels(hist, 196));
-    expect(axisLabels(normal, 196)).toHaveLength(scale.ticks.length);
+    expect(axisLabels(normal, 196)).toEqual(scale.ticks.map((tick) => String(tick)));
+    expect(axisLabels(hist, 196)).toEqual(expect.arrayContaining(['-15', '15']));
     expect(normal).not.toMatch(/(?:x|y|cx|cy)="(?:NaN|Infinity)/);
     expect(hist).not.toMatch(/(?:x|y|width|height)="(?:NaN|Infinity)/);
   });
@@ -48,7 +48,7 @@ describe('DOE 残差四联图共享横轴', () => {
     for (const label of ['残差', '标准化残差', '删后残差']) {
       const markup = renderToStaticMarkup(<MiniHist T={T} data={[-2, -1, 0, 1, 2]} h={220} title={`${label}分布`} xLabel={label} />);
       expect(markup).toContain(`${label}分布`);
-      expect(axisLabels(markup, 212)).toEqual([`${label}（分组区间）`]);
+      expect(axisLabels(markup, 212)).toEqual([label]);
     }
   });
 
@@ -64,15 +64,24 @@ describe('DOE 残差四联图共享横轴', () => {
     }
   });
 
-  it('单独残差图显示频数、分组区间与点的横纵坐标', () => {
+  it('单独残差图把区间读数放在横坐标数值，点坐标不重叠', () => {
     const hist = renderToStaticMarkup(<MiniHist T={T} data={[-2, -1, 0, 1, 2]} h={260} xLabel="残差" />);
     const normal = renderToStaticMarkup(<NormalProbPlot T={T} data={[-2, -1, 0, 1, 2]} h={260} showPointLabels />);
     const scatter = renderToStaticMarkup(<ScatterPlot T={T} xs={[1, 2]} ys={[-0.5, 0.5]} slope={0} intercept={0} xLabel="拟合值" yLabel="残差" h={260} showPointLabels />);
 
-    expect(hist).toContain('残差（分组区间）');
-    expect(hist).toContain('–');
+    expect(hist).toContain('残差</text>');
+    expect(hist).not.toContain('rotate(-35');
     expect(normal).toContain('%');
     expect(scatter).toContain('(1.0, -0.5)');
+  });
+
+  it('密集散点的坐标标签自动避让，不能互相覆盖', () => {
+    const labels = layoutScatterPointLabels(
+      [0, 1, 2, 3].map((i) => ({ i, x: 100, y: 100, text: `(${i}, 12345678901234567890)` })),
+      { left: 50, top: 50, right: 300, bottom: 200 },
+    );
+    expect(labels.length).toBeLessThan(4);
+    expect(labels.length).toBeGreaterThan(0);
   });
 });
 

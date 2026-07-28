@@ -4,7 +4,7 @@
 import { memo, Fragment } from 'react';
 import { nf, quantile, arrMin, arrMax, mean, stdev, tInv, decimateUniform } from '../../core';
 import type { ChartTokens } from '../tokens';
-import { niceTicks, tickDecimals } from '../tokens';
+import { tickDecimals } from '../tokens';
 import { Svg, Ln, Txt } from './primitives';
 
 export interface GageBarCat {
@@ -484,10 +484,13 @@ function MiniHistImpl({ T, data, h, title, xLabel, xDomain, xTicks }: {
   const Yc = (c: number) => m.t + (1 - c / (maxc * 1.08)) * ph;
   const yStep = Math.max(1, Math.ceil(maxc / 4));
   const yTicks = Array.from({ length: Math.floor(maxc / yStep) + 1 }, (_, i) => i * yStep);
-  const axisTicks = (xTicks ?? niceTicks(binLo, binHi, 6))
-    .filter((value) => Number.isFinite(value) && value >= binLo && value <= binHi);
+  // R8: 残差直方图的“区间读数”必须成为横轴数值。用实际柱边界，
+  // 不再用与柱区间无关的通用刻度，也不在图内倾斜印区间字符串。
+  const allBoundaryTicks = Array.from({ length: nb + 1 }, (_, i) => binLo + i * effectiveBw);
+  const maxAxisTicks = 9;
+  const tickStride = Math.max(1, Math.ceil((allBoundaryTicks.length - 1) / (maxAxisTicks - 1)));
+  const axisTicks = allBoundaryTicks.filter((_, i) => i === 0 || i === allBoundaryTicks.length - 1 || i % tickStride === 0);
   const xDp = tickDecimals([...axisTicks]);
-  const binDp = tickDecimals([binLo, binHi, effectiveBw]);
   const legacyAxisLabel = (xLabel ?? '残差').replace(/分布$/, '');
   const chartTitle = title ?? ((xLabel ?? '残差').endsWith('分布') ? xLabel! : `${xLabel ?? '残差'}分布`);
   return (
@@ -505,10 +508,10 @@ function MiniHistImpl({ T, data, h, title, xLabel, xDomain, xTicks }: {
         const x1 = X(binLo + (i + 1) * effectiveBw);
         return (
           <Fragment key={i}>
-            <rect x={x0 + 1} y={m.t + ph - bh} width={pw / nb - 2} height={bh} fill={T.bar} opacity={0.85} stroke={T.classic ? '#2A4B8D' : undefined} strokeWidth={T.classic ? 1 : 0} />
+            <rect x={x0 + 1} y={m.t + ph - bh} width={pw / nb - 2} height={bh} fill={T.bar} opacity={0.85} stroke={T.classic ? '#2A4B8D' : undefined} strokeWidth={T.classic ? 1 : 0}>
+              <title>{`${nf(binLo + i * effectiveBw, xDp)} 至 ${nf(binLo + (i + 1) * effectiveBw, xDp)}：${c} 个观测`}</title>
+            </rect>
             <Txt x={(x0 + x1) / 2} y={m.t + ph - bh - 7} s={String(c)} fill={T.text} size={9.5} anchor="middle" weight={600} />
-            <text x={(x0 + x1) / 2} y={H - 39} fill={T.axis} fontSize={8.5} textAnchor="end" fontFamily="IBM Plex Mono, monospace"
-              transform={`rotate(-35 ${(x0 + x1) / 2} ${H - 39})`}>{`${nf(binLo + i * effectiveBw, binDp)}–${nf(binLo + (i + 1) * effectiveBw, binDp)}`}</text>
           </Fragment>
         );
       })}
@@ -519,7 +522,7 @@ function MiniHistImpl({ T, data, h, title, xLabel, xDomain, xTicks }: {
       <Txt x={m.l} y={m.t - 8} s={chartTitle} fill={T.text} size={11} weight={600} />
       <text x={16} y={m.t + ph / 2} fill={T.text} fontSize={10.5} textAnchor="middle" fontFamily="IBM Plex Mono, monospace" fontWeight={600}
         transform={`rotate(-90 16 ${m.t + ph / 2})`}>频率</text>
-      <Txt x={m.l + pw / 2} y={H - 8} s={`${legacyAxisLabel}（分组区间）`} fill={T.text} size={10.5} anchor="middle" weight={600} />
+      <Txt x={m.l + pw / 2} y={H - 8} s={legacyAxisLabel} fill={T.text} size={10.5} anchor="middle" weight={600} />
       <Ln x1={m.l} y1={m.t + ph} x2={m.l + pw} y2={m.t + ph} stroke={T.axis} sw={1} />
       <Ln x1={m.l} y1={m.t} x2={m.l} y2={m.t + ph} stroke={T.axis} sw={1} />
     </Svg>

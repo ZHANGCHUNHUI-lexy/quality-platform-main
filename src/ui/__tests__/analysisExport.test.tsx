@@ -1,6 +1,7 @@
 /** 当前分析专项导出：四种格式必须消费同一份载荷。 */
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
+import JSZip from 'jszip';
 import { buildData, computeVarModel } from '../../core';
 import { buildHtmlReport } from '../../platform/htmlReport';
 import { buildDocx, buildPptx } from '../../platform/officeExport';
@@ -43,8 +44,8 @@ describe('当前分析专项导出', () => {
     expect(html).not.toContain('工作表 专项数据.mtw');
   });
 
-  it('Excel 增加当前分析 sheet，并写入相同结论', () => {
-    const bytes = buildXlsx(M, SPEC, REPORT);
+  it('Excel 增加当前分析 sheet，并写入相同结论', async () => {
+    const bytes = await buildXlsx(M, SPEC, REPORT);
     const wb = XLSX.read(bytes, { type: 'array' });
     const sheetName = wb.SheetNames.find((name) => name.includes('aql-当前分析'));
     expect(sheetName).toBeTruthy();
@@ -55,21 +56,21 @@ describe('当前分析专项导出', () => {
     expect(wb.SheetNames).not.toContain('失控点');
   });
 
-  it('P/C 属性图专项 Excel 不混入无关连续型工作表与能力结论', () => {
+  it('P/C 属性图专项 Excel 不混入无关连续型工作表与能力结论', async () => {
     const report: AnalysisReportPayload = {
       ...REPORT,
       kind: 'spc',
       title: 'P 控制图专项报告',
       subtitle: '属性数据',
     };
-    const wb = XLSX.read(buildXlsx(M, SPEC, report), { type: 'array' });
+    const wb = XLSX.read(await buildXlsx(M, SPEC, report), { type: 'array' });
     expect(wb.SheetNames).toEqual(['spc-当前分析']);
     expect(wb.SheetNames).not.toContain('数据');
     expect(wb.SheetNames).not.toContain('统计摘要');
     expect(wb.SheetNames).not.toContain('失控点');
   });
 
-  it('ANOVA/DOE 专项只导出带角色的分析原始数据，不派生伪子组均值/极差', () => {
+  it('ANOVA/DOE 专项只导出带角色的分析原始数据，不派生伪子组均值/极差', async () => {
     const report: AnalysisReportPayload = {
       ...REPORT,
       kind: 'anova',
@@ -80,7 +81,7 @@ describe('当前分析专项导出', () => {
         rows: [[1, 'A', 10], [2, 'A', 11], [3, 'B', 20], [4, 'B', 21]],
       }],
     };
-    const wb = XLSX.read(buildXlsx(M, SPEC, report), { type: 'array' });
+    const wb = XLSX.read(await buildXlsx(M, SPEC, report), { type: 'array' });
     expect(wb.SheetNames).toEqual(['anova-当前分析']);
     const rows = XLSX.utils.sheet_to_json<string[]>(wb.Sheets['anova-当前分析'], { header: 1 });
     expect(rows.flat().join('|')).toContain('工作表行|设备|压入力');
@@ -88,6 +89,14 @@ describe('当前分析专项导出', () => {
     expect(rows.flat()).not.toContain('极差');
     expect(wb.SheetNames).not.toContain('数据');
     expect(wb.SheetNames).not.toContain('统计摘要');
+  });
+
+  it('Excel 图形报告把 PNG 实际嵌入标准 XLSX drawing，而非仅列出名称', async () => {
+    const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), (c) => c.charCodeAt(0));
+    const bytes = await buildXlsx(M, SPEC, { ...REPORT, charts: [{ title: '量具 R&R 图形报告', svg: '<svg/>', width: 1, height: 1 }] }, [png]);
+    const zip = await JSZip.loadAsync(bytes);
+    expect(zip.file('xl/media/image1.png')).toBeTruthy();
+    expect(zip.file('xl/drawings/drawing1.xml')).toBeTruthy();
   });
 
   it('Word 与 PowerPoint 专项路径均生成合法 OOXML', async () => {
@@ -99,5 +108,17 @@ describe('当前分析专项导出', () => {
     expect(isZip(pptx)).toBe(true);
     expect(docx.length).toBeGreaterThan(2000);
     expect(pptx.length).toBeGreaterThan(10000);
+  });
+
+  it('Word 与 PowerPoint 的专项图形实际写入文件包', async () => {
+    const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), (c) => c.charCodeAt(0));
+    const report: AnalysisReportPayload = { ...REPORT, charts: [{ title: '量具 R&R 图形报告', svg: '<svg/>', width: 1, height: 1 }] };
+    const [docx, pptx] = await Promise.all([
+      buildDocx(M, SPEC, { analysis: [png] }, report),
+      buildPptx(M, SPEC, { analysis: [png] }, report),
+    ]);
+    const [docxZip, pptxZip] = await Promise.all([JSZip.loadAsync(docx), JSZip.loadAsync(pptx)]);
+    expect(Object.keys(docxZip.files).some((name) => /^word\/media\/.+\.png$/.test(name))).toBe(true);
+    expect(Object.keys(pptxZip.files).some((name) => /^ppt\/media\/.+\.png$/.test(name))).toBe(true);
   });
 });

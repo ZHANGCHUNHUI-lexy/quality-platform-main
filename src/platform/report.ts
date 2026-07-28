@@ -112,11 +112,22 @@ export async function buildExportJob(
   const base = analysis?.title.replace(/[\\/:*?"<>|]/g, '_') || M.name.replace(/\.[^.]+$/, '');
   if (fmt === 'excel') {
     const { buildXlsx } = await import('./xlsxExport');
+    const office = await import('./officeExport');
+    let chartImages: Uint8Array[];
+    try {
+      const images = await office.renderReportImages(M, spec, analysis);
+      chartImages = analysis ? (images.analysis ?? []) : [images.xbar, images.hist, images.prob].filter((image): image is Uint8Array => image != null);
+    } catch {
+      throw new Error('图形报告生成失败，已停止导出，避免产生空白 Excel。请刷新页面后重试。');
+    }
+    if (analysis?.charts.length && chartImages.length !== analysis.charts.length) {
+      throw new Error('图形报告不完整，已停止导出，避免产生缺图 Excel。');
+    }
     return {
       defaultName: `${base}_${stamp}`,
       ext: 'xlsx',
       filterLabel: 'Excel 工作簿',
-      bytes: buildXlsx(M, spec, analysis),
+      bytes: await buildXlsx(M, spec, analysis, chartImages),
     };
   }
   if (fmt === 'pdf') {
@@ -129,12 +140,17 @@ export async function buildExportJob(
       text: buildHtmlReport(M, spec, analysis),
     };
   }
-  // Office 真渲染：图表位图化失败(无 canvas 环境)时降级为纯表格文档
+  // Office 导出必须带图。位图化失败时中止，不得降级产生空白图表占位。
   const office = await import('./officeExport');
-  let images: Awaited<ReturnType<typeof office.renderReportImages>> = {};
+  let images: Awaited<ReturnType<typeof office.renderReportImages>>;
   try {
     images = await office.renderReportImages(M, spec, analysis);
-  } catch { /* 降级 */ }
+  } catch {
+    throw new Error('图形报告生成失败，已停止导出，避免产生空白 Office 报告。请刷新页面后重试。');
+  }
+  if (analysis?.charts.length && (images.analysis?.length ?? 0) !== analysis.charts.length) {
+    throw new Error('图形报告不完整，已停止导出，避免产生缺图 Office 报告。');
+  }
   if (fmt === 'ppt') {
     return {
       defaultName: `${base}_${stamp}`,

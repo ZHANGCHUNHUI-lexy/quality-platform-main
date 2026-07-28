@@ -3,6 +3,7 @@
  * 两端共用（桌面经 Rust 落盘,Web 走 blob 下载）。
  */
 import * as XLSX from 'xlsx';
+import JSZip from 'jszip';
 import {
   nf, computeCapability, capabilityInputError, evalRules, DEFAULT_RULES, type VarModel,
   assessCapability, countCapabilityViolations, andersonDarling,
@@ -10,7 +11,48 @@ import {
 import type { ReportSpec } from './report';
 import { safeSheetName, type AnalysisReportPayload } from './analysisReportModel';
 
-export function buildXlsx(M: VarModel, spec: ReportSpec, analysis?: AnalysisReportPayload): Uint8Array {
+const asWorkbookBytes = (wb: XLSX.WorkBook) => new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+
+/**
+ * SheetJS 负责单元格，图片使用 OOXML drawing 关系写入独立“图形报告”页。
+ * 这样 Excel、Word、PowerPoint 均为实际嵌入图，而不是“请见其他报告”的占位文本。
+ */
+async function embedChartImages(wb: XLSX.WorkBook, images: Uint8Array[]): Promise<Uint8Array> {
+  const chartImages = images.filter((image) => image.byteLength > 0);
+  if (chartImages.length === 0) return asWorkbookBytes(wb);
+
+  const sheetName = safeSheetName('图形报告');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['图形报告（嵌入图片）']]), sheetName);
+  const sheetNumber = wb.SheetNames.length;
+  const zip = await JSZip.loadAsync(asWorkbookBytes(wb));
+  const sheetPath = `xl/worksheets/sheet${sheetNumber}.xml`;
+  const sheetRelsPath = `xl/worksheets/_rels/sheet${sheetNumber}.xml.rels`;
+  const drawingPath = 'xl/drawings/drawing1.xml';
+  const drawingRelsPath = 'xl/drawings/_rels/drawing1.xml.rels';
+  const contentTypesPath = '[Content_Types].xml';
+  const sheetXml = await zip.file(sheetPath)?.async('string');
+  const contentTypes = await zip.file(contentTypesPath)?.async('string');
+  if (!sheetXml || !contentTypes) throw new Error('Excel 图形报告工作表创建失败');
+
+  const drawingXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${chartImages.map((_, index) => {
+    const row = 1 + index * 27;
+    return `<xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:ext cx="8382000" cy="4572000"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${index + 1}" name="图形报告 ${index + 1}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId${index + 1}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="8382000" cy="4572000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`;
+  }).join('')}</xdr:wsDr>`;
+  const drawingRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${chartImages.map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${index + 1}.png"/>`).join('')}</Relationships>`;
+  const sheetRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>`;
+  const nextContentTypes = contentTypes
+    .replace('</Types>', '<Default Extension="png" ContentType="image/png"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>');
+
+  zip.file(sheetPath, sheetXml.replace('</worksheet>', '<drawing r:id="rId1"/></worksheet>'));
+  zip.file(sheetRelsPath, sheetRels);
+  zip.file(drawingPath, drawingXml);
+  zip.file(drawingRelsPath, drawingRels);
+  zip.file(contentTypesPath, nextContentTypes);
+  chartImages.forEach((image, index) => zip.file(`xl/media/image${index + 1}.png`, image));
+  return new Uint8Array(await zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' }));
+}
+
+export async function buildXlsx(M: VarModel, spec: ReportSpec, analysis?: AnalysisReportPayload, chartImages: Uint8Array[] = []): Promise<Uint8Array> {
   const wb = XLSX.utils.book_new();
 
   const appendDataSheet = () => {
@@ -43,14 +85,14 @@ export function buildXlsx(M: VarModel, spec: ReportSpec, analysis?: AnalysisRepo
       if (table.note) rows.push([table.note]);
     }
     if (analysis.charts.length > 0) {
-      rows.push([], ['图形清单'], ...analysis.charts.map((chart) => [chart.title, chart.note ?? '见 HTML/Word/PPT 图文报告']));
+      rows.push([], ['图形报告'], ...analysis.charts.map((chart) => [chart.title, chart.note ?? '图形已嵌入“图形报告”工作表']));
     }
     XLSX.utils.book_append_sheet(
       wb,
       XLSX.utils.aoa_to_sheet(rows),
       safeSheetName(`${analysis.kind}-当前分析`),
     );
-    return new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+    return embedChartImages(wb, chartImages);
   }
 
   appendDataSheet();
@@ -102,5 +144,5 @@ export function buildXlsx(M: VarModel, spec: ReportSpec, analysis?: AnalysisRepo
   if (list.length === 0) violRows.push(['—', '—', '未检出失控点，过程受控']);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(violRows), '失控点');
 
-  return new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+  return embedChartImages(wb, chartImages);
 }
