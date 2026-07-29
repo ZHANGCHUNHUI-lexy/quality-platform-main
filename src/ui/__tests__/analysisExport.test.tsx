@@ -121,4 +121,43 @@ describe('当前分析专项导出', () => {
     expect(Object.keys(docxZip.files).some((name) => /^word\/media\/.+\.png$/.test(name))).toBe(true);
     expect(Object.keys(pptxZip.files).some((name) => /^ppt\/media\/.+\.png$/.test(name))).toBe(true);
   });
+
+  it('CPK/MSA 的 Word 专项报告只保留结论和关键图形，不写入中间数据表', async () => {
+    const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), (c) => c.charCodeAt(0));
+    const report: AnalysisReportPayload = {
+      ...REPORT,
+      kind: 'capability',
+      title: '过程能力分析专项报告',
+      summary: ['Cpk=1.42，能力充足。'],
+      tables: [{ title: '用于能力分析的解析子组数据', headers: ['子组', '测量值'], rows: [[1, 25.01]] }],
+      charts: [
+        { title: '过程能力直方图', svg: '<svg/>', width: 960, height: 320 },
+        { title: '正态概率图', svg: '<svg/>', width: 960, height: 300 },
+      ],
+    };
+    const gageReport: AnalysisReportPayload = {
+      ...REPORT,
+      kind: 'gagerr',
+      title: '测量系统分析专项报告',
+      summary: ['合计 Gage R&R=8.8%，测量系统可接受。'],
+      tables: [{ title: '导入的交叉研究原始观测', headers: ['零件', '测量值'], rows: [[1, 25.01]] }],
+      charts: [{ title: '量具 R&R 图形报告', svg: '<svg/>', width: 1160, height: 1030 }],
+    };
+    const [capabilityZip, gageZip] = await Promise.all([
+      JSZip.loadAsync(await buildDocx(M, SPEC, { analysis: [png, png] }, report)),
+      JSZip.loadAsync(await buildDocx(M, SPEC, { analysis: [png] }, gageReport)),
+    ]);
+    const [capabilityXml, gageXml] = await Promise.all([
+      capabilityZip.file('word/document.xml')!.async('string'),
+      gageZip.file('word/document.xml')!.async('string'),
+    ]);
+    expect(capabilityXml).toContain('Cpk=1.42，能力充足。');
+    expect(capabilityXml).not.toContain('用于能力分析的解析子组数据');
+    expect(capabilityXml).not.toContain('注意：');
+    expect((capabilityXml.match(/<w:drawing>/g) ?? []).length).toBe(2);
+    expect(gageXml).toContain('合计 Gage R&amp;R=8.8%，测量系统可接受。');
+    expect(gageXml).not.toContain('导入的交叉研究原始观测');
+    expect(gageXml).not.toContain('注意：');
+    expect((gageXml.match(/<w:drawing>/g) ?? []).length).toBe(1);
+  });
 });

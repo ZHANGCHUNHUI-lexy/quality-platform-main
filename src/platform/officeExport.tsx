@@ -137,6 +137,44 @@ export async function buildDocx(
 
   if (analysis) {
     const sourceContext = analysisUsesWorksheet(analysis) ? ` · 工作表 ${M.name}` : '';
+    const isCompactWordReport = analysis.kind === 'capability' || analysis.kind === 'gagerr';
+    if (isCompactWordReport) {
+      const compactText = (text: string, color = '26303C') => new Paragraph({
+        children: [new TextRun({ text, size: 18, color, font: 'Microsoft YaHei' })],
+        spacing: { after: 60 },
+      });
+      const compactImage = (chart: AnalysisReportPayload['charts'][number], data: Uint8Array | undefined, width: number) =>
+        data
+          ? new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new ImageRun({
+                type: 'png', data,
+                transformation: { width, height: Math.max(96, Math.round(width * chart.height / chart.width)) },
+              })],
+            })
+          : compactText('（图形在浏览器/桌面导出时嵌入）', '8A929D');
+      const compactCharts = analysis.kind === 'capability' && analysis.charts.length === 2
+        ? [new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [new TableRow({ children: analysis.charts.map((chart, index) => new TableCell({
+              width: { size: 50, type: WidthType.PERCENTAGE },
+              children: [compactImage(chart, images.analysis?.[index], 300)],
+            })) })],
+          })]
+        : analysis.charts.slice(0, 1).map((chart, index) => compactImage(chart, images.analysis?.[index], 600));
+      const children: (Paragraph | Table)[] = [
+        new Paragraph({ children: [new TextRun({ text: analysis.title, size: 34, bold: true, color: '26303C', font: 'Microsoft YaHei' })], spacing: { after: 80 } }),
+        new Paragraph({ children: [new TextRun({ text: '分析结论', size: 24, bold: true, color: '1F6FB2', font: 'Microsoft YaHei' })], spacing: { after: 60 } }),
+        ...analysis.summary.map((line) => compactText(line)),
+        ...compactCharts,
+      ];
+      const doc = new Document({ sections: [{
+        properties: { page: { margin: { top: 420, right: 540, bottom: 420, left: 540 } } },
+        children,
+      }] });
+      const blob = await Packer.toBlob(doc);
+      return new Uint8Array(await blob.arrayBuffer());
+    }
     const children: (Paragraph | Table)[] = [
       new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: analysis.title, size: 40, bold: true })] }),
       p(`${analysis.subtitle}${sourceContext} · 生成于 ${analysis.generatedAt}`),
