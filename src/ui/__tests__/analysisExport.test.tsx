@@ -155,6 +155,7 @@ describe('当前分析专项导出', () => {
     expect(capabilityXml).not.toContain('用于能力分析的解析子组数据');
     expect(capabilityXml).not.toContain('注意：');
     expect((capabilityXml.match(/<w:drawing>/g) ?? []).length).toBe(2);
+    expect(capabilityXml).not.toContain('<w:tbl>');
     expect(gageXml).toContain('合计 Gage R&amp;R=8.8%，测量系统可接受。');
     expect(gageXml).not.toContain('导入的交叉研究原始观测');
     expect(gageXml).not.toContain('注意：');

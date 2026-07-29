@@ -147,21 +147,16 @@ export async function buildDocx(
         data
           ? new Paragraph({
               alignment: AlignmentType.CENTER,
+              spacing: { after: 40 },
               children: [new ImageRun({
                 type: 'png', data,
                 transformation: { width, height: Math.max(96, Math.round(width * chart.height / chart.width)) },
               })],
             })
           : compactText('（图形在浏览器/桌面导出时嵌入）', '8A929D');
-      const compactCharts = analysis.kind === 'capability' && analysis.charts.length === 2
-        ? [new Table({
-            width: { size: 100, type: WidthType.PERCENTAGE },
-            rows: [new TableRow({ children: analysis.charts.map((chart, index) => new TableCell({
-              width: { size: 50, type: WidthType.PERCENTAGE },
-              children: [compactImage(chart, images.analysis?.[index], 300)],
-            })) })],
-          })]
-        : analysis.charts.slice(0, 1).map((chart, index) => compactImage(chart, images.analysis?.[index], 600));
+      const compactCharts = analysis.charts
+        .slice(0, analysis.kind === 'capability' ? 2 : 1)
+        .map((chart, index) => compactImage(chart, images.analysis?.[index], analysis.kind === 'capability' ? 540 : 600));
       const children: (Paragraph | Table)[] = [
         new Paragraph({ children: [new TextRun({ text: analysis.title, size: 34, bold: true, color: '26303C', font: 'Microsoft YaHei' })], spacing: { after: 80 } }),
         new Paragraph({ children: [new TextRun({ text: '分析结论', size: 24, bold: true, color: '1F6FB2', font: 'Microsoft YaHei' })], spacing: { after: 60 } }),
